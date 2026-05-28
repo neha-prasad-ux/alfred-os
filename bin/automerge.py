@@ -252,15 +252,23 @@ def candidates() -> list[tuple[str, dict]]:
             if age < MIN_AGE_SECONDS:
                 continue
             checks = pr.get("statusCheckRollup", []) or []
+            # statusCheckRollup mixes two shapes:
+            #   CheckRun       -> .status (QUEUED/IN_PROGRESS/COMPLETED) + .conclusion
+            #   StatusContext  -> .state  (PENDING/SUCCESS/FAILURE/ERROR), no conclusion
+            # Vercel reports its build/deploy as a StatusContext, so checking
+            # only .conclusion silently ignored a failed Vercel deploy (this is
+            # how a broken build got auto-merged). Inspect both fields.
             ci_red = any(
                 (c.get("conclusion") or "").upper()
                 in ("FAILURE", "TIMED_OUT", "CANCELLED", "ACTION_REQUIRED")
+                or (c.get("state") or "").upper() in ("FAILURE", "ERROR")
                 for c in checks
             )
             if ci_red:
                 continue
             ci_pending = any(
                 (c.get("status") or "").upper() in ("IN_PROGRESS", "QUEUED", "PENDING")
+                or (c.get("state") or "").upper() in ("PENDING", "EXPECTED")
                 for c in checks
             )
             if ci_pending:
